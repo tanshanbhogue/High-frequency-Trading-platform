@@ -1,0 +1,328 @@
+-- =====================================================================
+--  HFT DATABASE - DEMONSTRATION SCRIPT
+--  Each demo: "-- N. <what it shows>" followed by the SQL to run in MySQL.
+--  Paste into the mysql client one block at a time, or run it all with:
+--      mysql -u root -p --force < HFT_demo.txt
+--  (--force keeps going past the deliberate errors in Section C.)
+-- =====================================================================
+
+-- SETUP: make the prompt look like PES1UG24CS637_HFT>  (\_ = a space)
+prompt PES1UG24CS637_HFT>\_
+
+-- SETUP: select the database
+USE HFT;
+
+
+-- =====================================================================
+-- SECTION A : DATABASE STRUCTURE AND ROW COUNTS
+-- =====================================================================
+
+-- 1. Confirms the HFT database exists
+SHOW DATABASES;
+
+-- 2. Lists all 14 tables (8 entities + 6 junctions) and the 2 helper views
+SHOW FULL TABLES;
+
+-- 3. Shows the structure of the orders table (columns, types, keys)
+DESCRIBE orders;
+
+-- 4. Shows the foreign keys of orders, including the composite
+--    (trader_id, portfolio_id) -> portfolio_owners ownership rule
+SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = 'HFT' AND TABLE_NAME = 'orders' AND REFERENCED_TABLE_NAME IS NOT NULL
+ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION;
+
+-- 5. Shows the foreign keys of trades, including the composite
+--    (order_id, exchange_id) -> order_routes (EXECUTED_ON) rule
+SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = 'HFT' AND TABLE_NAME = 'trades' AND REFERENCED_TABLE_NAME IS NOT NULL
+ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION;
+
+-- 6. Shows the CHECK constraints defined in the database
+SELECT TABLE_NAME, CONSTRAINT_NAME
+FROM information_schema.TABLE_CONSTRAINTS
+WHERE CONSTRAINT_SCHEMA = 'HFT' AND CONSTRAINT_TYPE = 'CHECK'
+ORDER BY TABLE_NAME, CONSTRAINT_NAME;
+
+-- 7. Shows the triggers that enforce rules plain constraints cannot
+SHOW TRIGGERS;
+
+-- 8. Row count of every table (>= 12 rows in each of the 8 main tables)
+SELECT 'traders' AS table_name, COUNT(*) AS row_count FROM traders
+UNION ALL SELECT 'algorithms', COUNT(*) FROM algorithms
+UNION ALL SELECT 'portfolios', COUNT(*) FROM portfolios
+UNION ALL SELECT 'securities', COUNT(*) FROM securities
+UNION ALL SELECT 'exchanges', COUNT(*) FROM exchanges
+UNION ALL SELECT 'orders', COUNT(*) FROM orders
+UNION ALL SELECT 'trades', COUNT(*) FROM trades
+UNION ALL SELECT 'market_feed_data', COUNT(*) FROM market_feed_data
+UNION ALL SELECT 'algorithm_developers', COUNT(*) FROM algorithm_developers
+UNION ALL SELECT 'portfolio_owners', COUNT(*) FROM portfolio_owners
+UNION ALL SELECT 'portfolio_holdings', COUNT(*) FROM portfolio_holdings
+UNION ALL SELECT 'security_listings', COUNT(*) FROM security_listings
+UNION ALL SELECT 'algorithm_training_data', COUNT(*) FROM algorithm_training_data
+UNION ALL SELECT 'order_routes', COUNT(*) FROM order_routes;
+
+
+-- =====================================================================
+-- SECTION B : QUERY DEMONSTRATIONS
+-- =====================================================================
+
+-- 9. Every trader and the portfolios they own (many-to-many via portfolio_owners;
+--    LEFT JOIN keeps traders who own nothing)
+SELECT t.trader_id, t.full_name, p.portfolio_name, po.ownership_percentage
+FROM traders t
+LEFT JOIN portfolio_owners po ON po.trader_id = t.trader_id
+LEFT JOIN portfolios p        ON p.portfolio_id = po.portfolio_id
+ORDER BY t.trader_id, p.portfolio_name;
+
+-- 10. Portfolios with joint ownership (several owners, percentages shown per owner)
+SELECT p.portfolio_name,
+       GROUP_CONCAT(CONCAT(t.full_name, ' ', po.ownership_percentage, '%')
+                    ORDER BY po.ownership_percentage DESC SEPARATOR ' | ') AS owners
+FROM portfolios p
+JOIN portfolio_owners po ON po.portfolio_id = p.portfolio_id
+JOIN traders t           ON t.trader_id = po.trader_id
+GROUP BY p.portfolio_id, p.portfolio_name
+HAVING COUNT(*) > 1
+ORDER BY p.portfolio_name;
+
+-- 11. Securities held by each portfolio, with quantity, average price and cost basis
+SELECT p.portfolio_name, s.security_name, ph.quantity_held, ph.avg_price,
+       ph.quantity_held * ph.avg_price AS cost_basis
+FROM portfolio_holdings ph
+JOIN portfolios p ON p.portfolio_id = ph.portfolio_id
+JOIN securities s ON s.security_id  = ph.security_id
+ORDER BY p.portfolio_name, s.security_name;
+
+-- 12. Algorithms and their developers (several developers per algorithm,
+--     several algorithms per developer)
+SELECT a.algorithm_id, a.algorithm_name, a.version, a.strategy_type, a.programming_language,
+       GROUP_CONCAT(CONCAT(t.full_name, ' (', ad.contribution_role, ')')
+                    ORDER BY t.full_name SEPARATOR '; ') AS developers
+FROM algorithms a
+LEFT JOIN algorithm_developers ad ON ad.algorithm_id = a.algorithm_id
+LEFT JOIN traders t               ON t.trader_id     = ad.trader_id
+GROUP BY a.algorithm_id, a.algorithm_name, a.version, a.strategy_type, a.programming_language
+ORDER BY a.algorithm_id;
+
+-- 13. All securities listed on one exchange (NSE), with ticker symbol
+SELECT e.exchange_name, sl.ticker_symbol, s.security_name, s.asset_type, sl.currency, sl.listing_date
+FROM security_listings sl
+JOIN exchanges  e ON e.exchange_id = sl.exchange_id
+JOIN securities s ON s.security_id = sl.security_id
+WHERE e.mic_code = 'XNSE'
+ORDER BY sl.ticker_symbol;
+
+-- 14. Securities listed on more than one exchange (many-to-many Security-Exchange)
+SELECT s.security_name,
+       GROUP_CONCAT(CONCAT(e.mic_code, ':', sl.ticker_symbol) ORDER BY e.mic_code SEPARATOR ', ') AS listings
+FROM securities s
+JOIN security_listings sl ON sl.security_id = s.security_id
+JOIN exchanges e          ON e.exchange_id  = sl.exchange_id
+GROUP BY s.security_id, s.security_name
+HAVING COUNT(*) > 1
+ORDER BY s.security_name;
+
+-- 15. Market feed for one selected security (Microsoft) on every exchange,
+--     with bid-ask spread
+SELECT s.security_name, e.mic_code, sl.ticker_symbol, m.feed_timestamp,
+       m.bid_price, m.ask_price, (m.ask_price - m.bid_price) AS spread,
+       m.last_price, m.traded_volume, m.source
+FROM market_feed_data m
+JOIN security_listings sl ON sl.listing_id = m.listing_id
+JOIN securities s         ON s.security_id = sl.security_id
+JOIN exchanges e          ON e.exchange_id = sl.exchange_id
+WHERE s.isin = 'US5949181045'
+ORDER BY m.feed_timestamp;
+
+-- 16. Which algorithms trained on which market feed records
+SELECT a.algorithm_name, a.version, atd.data_split, m.feed_id,
+       sl.ticker_symbol, e.mic_code, m.feed_timestamp
+FROM algorithm_training_data atd
+JOIN algorithms a         ON a.algorithm_id = atd.algorithm_id
+JOIN market_feed_data m   ON m.feed_id      = atd.feed_id
+JOIN security_listings sl ON sl.listing_id  = m.listing_id
+JOIN exchanges e          ON e.exchange_id  = sl.exchange_id
+ORDER BY a.algorithm_id, m.feed_id;
+
+-- 17. Training/validation/testing split per algorithm
+SELECT a.algorithm_name, a.version,
+       SUM(atd.data_split = 'TRAINING')   AS training_rows,
+       SUM(atd.data_split = 'VALIDATION') AS validation_rows,
+       SUM(atd.data_split = 'TESTING')    AS testing_rows
+FROM algorithms a
+JOIN algorithm_training_data atd ON atd.algorithm_id = a.algorithm_id
+GROUP BY a.algorithm_id, a.algorithm_name, a.version
+ORDER BY a.algorithm_id;
+
+-- 18. All orders with trader, portfolio, security and algorithm
+--     (orders with no algorithm are shown as MANUAL)
+SELECT o.order_id, t.full_name AS trader, p.portfolio_name, s.security_name,
+       COALESCE(CONCAT(a.algorithm_name, ' v', a.version), 'MANUAL') AS algorithm,
+       o.side, o.order_type, o.quantity, o.limit_price, o.time_in_force, o.status
+FROM orders o
+JOIN traders t    ON t.trader_id    = o.trader_id
+JOIN portfolios p ON p.portfolio_id = o.portfolio_id
+JOIN securities s ON s.security_id  = o.security_id
+LEFT JOIN algorithms a ON a.algorithm_id = o.algorithm_id
+ORDER BY o.order_id;
+
+-- 19. Orders by status (NEW, PENDING, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED)
+SELECT status, COUNT(*) AS num_orders
+FROM orders GROUP BY status ORDER BY num_orders DESC;
+
+-- 20. Every order and its execution details (orders with no trades still appear)
+SELECT o.order_id, o.status, tr.trade_id, tr.execution_reference, e.mic_code,
+       tr.executed_quantity, tr.execution_price, tr.commission,
+       tr.executed_at, tr.settlement_status
+FROM orders o
+LEFT JOIN trades tr   ON tr.order_id   = o.order_id
+LEFT JOIN exchanges e ON e.exchange_id = tr.exchange_id
+ORDER BY o.order_id, tr.executed_at;
+
+-- 21. Total executed quantity AND remaining unexecuted quantity of each order
+SELECT o.order_id, o.status, o.quantity,
+       COALESCE(SUM(t.executed_quantity), 0)              AS total_executed,
+       o.quantity - COALESCE(SUM(t.executed_quantity), 0) AS remaining_quantity
+FROM orders o
+LEFT JOIN trades t ON t.order_id = o.order_id
+GROUP BY o.order_id, o.status, o.quantity
+ORDER BY o.order_id;
+
+-- 22. Partial fills: orders that have multiple trades
+SELECT o.order_id, COUNT(t.trade_id) AS num_trades,
+       SUM(t.executed_quantity) AS executed, o.quantity AS ordered
+FROM orders o
+JOIN trades t ON t.order_id = o.order_id
+GROUP BY o.order_id, o.quantity
+HAVING COUNT(t.trade_id) > 1
+ORDER BY o.order_id;
+
+-- 23. Orders routed to multiple exchanges (many-to-many Order-Exchange)
+SELECT o.order_id, e.mic_code, r.routed_quantity, r.route_status, r.routing_reason
+FROM order_routes r
+JOIN orders o    ON o.order_id    = r.order_id
+JOIN exchanges e ON e.exchange_id = r.exchange_id
+WHERE r.order_id IN (SELECT order_id FROM order_routes GROUP BY order_id HAVING COUNT(*) > 1)
+ORDER BY o.order_id, e.mic_code;
+
+-- 24. Orders that never produced a trade (new, pending, cancelled, rejected)
+SELECT o.order_id, o.status, o.quantity
+FROM orders o
+LEFT JOIN trades t ON t.order_id = o.order_id
+WHERE t.trade_id IS NULL
+ORDER BY o.order_id;
+
+-- 25. Exchanges on which trades were executed
+SELECT DISTINCT e.exchange_id, e.exchange_name, e.mic_code
+FROM trades t
+JOIN exchanges e ON e.exchange_id = t.exchange_id
+ORDER BY e.exchange_id;
+
+-- 26. Total trading volume per exchange (shares; notional and commission are in
+--     each exchange's local currency)
+SELECT e.mic_code, e.exchange_name,
+       COUNT(*)                                     AS num_trades,
+       SUM(t.executed_quantity)                     AS total_volume,
+       SUM(t.executed_quantity * t.execution_price) AS notional_local_ccy,
+       SUM(t.commission)                            AS total_commission
+FROM trades t
+JOIN exchanges e ON e.exchange_id = t.exchange_id
+GROUP BY e.exchange_id, e.mic_code, e.exchange_name
+ORDER BY total_volume DESC;
+
+-- 27. Volume-weighted average execution price per order
+SELECT t.order_id,
+       SUM(t.executed_quantity * t.execution_price) / SUM(t.executed_quantity) AS vwap_price,
+       SUM(t.executed_quantity) AS total_qty
+FROM trades t
+GROUP BY t.order_id
+ORDER BY t.order_id;
+
+-- 28. Orders placed by algorithm (manual orders excluded)
+SELECT a.algorithm_name, a.version, a.strategy_type, COUNT(o.order_id) AS num_orders
+FROM algorithms a
+JOIN orders o ON o.algorithm_id = a.algorithm_id
+GROUP BY a.algorithm_id, a.algorithm_name, a.version, a.strategy_type
+ORDER BY num_orders DESC, a.algorithm_name;
+
+-- 29. Ownership check view: every portfolio's owners add up to exactly 100%
+SELECT * FROM v_portfolio_ownership_check;
+
+-- 30. Consistency view: stored order status vs. actual trades (0 rows = all consistent)
+SELECT * FROM v_order_execution_summary WHERE status_check <> 'OK';
+
+
+-- =====================================================================
+-- SECTION C : INTEGRITY RULES (each statement below is REJECTED on purpose)
+-- =====================================================================
+
+-- 31. A trader who does not own the portfolio cannot place an order on it
+--     (composite foreign key fk_orders_owner)
+INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price, time_in_force, status)
+VALUES (2, 3, 1, 'BUY', 'LIMIT', 10, 100, 'DAY', 'NEW');
+
+-- 32. Portfolio ownership cannot exceed 100% (trigger)
+INSERT INTO portfolio_owners VALUES (2, 3, 10.00, '2024-01-01');
+
+-- 33. A single owner cannot hold more than 100% of a portfolio (rejected by the ownership rules)
+INSERT INTO portfolio_owners VALUES (11, 11, 150.00, '2024-01-01');
+
+-- 34. Executed quantity cannot exceed the order quantity (trigger; order 1 is fully filled)
+INSERT INTO trades (order_id, exchange_id, execution_reference, executed_quantity, execution_price, executed_at)
+VALUES (1, 1, 'X-1', 1, 1651, NOW());
+
+-- 35. A trade must occur on an exchange the order was routed to
+--     (composite foreign key fk_trades_route; order 2 was routed only to NSE)
+INSERT INTO trades (order_id, exchange_id, execution_reference, executed_quantity, execution_price, executed_at)
+VALUES (2, 2, 'X-2', 1, 4000, NOW());
+
+-- 36. An order cannot be routed to an exchange where its security is not listed
+--     (trigger; order 14 is for QQQ, which is not listed on the LSE)
+INSERT INTO order_routes VALUES (14, 5, 10, NOW(3), 'PENDING', 'test');
+
+-- 37. Crossed market quote (bid higher than ask) is rejected (CHECK constraint)
+INSERT INTO market_feed_data (listing_id, feed_timestamp, bid_price, ask_price, last_price, bid_size, ask_size, traded_volume, source)
+VALUES (1, NOW(3), 101, 100, 100, 1, 1, 1, 'TEST');
+
+-- 38. Negative prices and quantities are rejected (CHECK constraints)
+INSERT INTO portfolio_holdings VALUES (1, 5, -5, 10, NOW());
+
+-- 39. A MARKET order must not carry a price (CHECK constraint)
+INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price)
+VALUES (1, 1, 1, 'BUY', 'MARKET', 10, 5);
+
+-- 40. Duplicate email is rejected (UNIQUE constraint)
+INSERT INTO traders (full_name, email, desk, role)
+VALUES ('Test User', 'aarav.sharma@quantedge.example', 'Test Desk', 'Trader');
+
+-- 41. Deleting a trader who owns portfolios / has orders is blocked (ON DELETE RESTRICT)
+DELETE FROM traders WHERE trader_id = 1;
+
+-- 42. Same algorithm name + version cannot be inserted twice (UNIQUE constraint)
+INSERT INTO algorithms (algorithm_name, version, strategy_type, programming_language)
+VALUES ('AlphaMaker', '2.1', 'Market Making', 'C++');
+
+
+-- =====================================================================
+-- SECTION D : A VALID CHANGE, THEN UNDO IT (shows the rules allow correct data)
+-- =====================================================================
+
+-- 43. Start a transaction, insert a valid manual order (trader 3 owns portfolio 3),
+--     show it, then roll back so the database is left unchanged
+START TRANSACTION;
+INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price, time_in_force, status)
+VALUES (3, 3, 4, 'BUY', 'LIMIT', 250, 1440.00, 'DAY', 'NEW');
+SELECT order_id, trader_id, portfolio_id, security_id, side, quantity, status
+FROM orders ORDER BY order_id DESC LIMIT 1;
+ROLLBACK;
+
+-- 44. Confirm the rollback: still 17 orders
+SELECT COUNT(*) AS order_count FROM orders;
+
+-- =====================================================================
+-- END OF DEMO
+-- =====================================================================

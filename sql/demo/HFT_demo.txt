@@ -1,0 +1,4 @@
+-- Demo script for the core schema (REPLACE with your existing HFT_demo.txt)
+--
+-- Purpose: Demonstration
+--

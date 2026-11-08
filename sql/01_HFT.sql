@@ -1,0 +1,4 @@
+-- Main schema + dummy data (REPLACE this file with your existing HFT.sql)
+--
+-- Purpose: Rubric 2 - SQL database implementation, DDL with constraints (4 marks)
+--

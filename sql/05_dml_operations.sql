@@ -1,0 +1,11 @@
+-- DML operations: INSERT, UPDATE, DELETE, transactions
+--
+-- Purpose: Rubric 3 - DML operations (4 marks)
+--
+-- TODO:
+--   [ ] INSERT single and multi-row examples
+--   [ ] INSERT ... SELECT
+--   [ ] UPDATE with join / subquery
+--   [ ] DELETE with condition (and one that is blocked by RESTRICT)
+--   [ ] Transaction with COMMIT and ROLLBACK
+--   [ ] Each statement preceded by a comment saying what it demonstrates

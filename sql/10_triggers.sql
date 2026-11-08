@@ -1,0 +1,11 @@
+-- Triggers (existing + new)
+--
+-- Purpose: Rubric 4 - Advanced concepts: trigger
+--
+-- TODO:
+--   [ ] Keep ownership <= 100 trigger
+--   [ ] Keep order-route validation trigger
+--   [ ] Keep trade quantity validation trigger
+--   [ ] NEW: audit triggers on orders and trades writing to audit_log
+--   [ ] NEW: trigger to keep order status in sync with fills
+--   [ ] Test statements for each trigger

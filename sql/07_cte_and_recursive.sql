@@ -1,0 +1,8 @@
+-- CTEs and recursive CTE
+--
+-- Purpose: Rubric 4 - Advanced concepts: CTE
+--
+-- TODO:
+--   [ ] Non-recursive CTE (e.g. daily volume per exchange)
+--   [ ] Recursive CTE over traders.reports_to (desk hierarchy)
+--   [ ] Optional: window functions (RANK, running total)

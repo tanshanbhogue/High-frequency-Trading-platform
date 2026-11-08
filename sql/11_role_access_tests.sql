@@ -1,0 +1,9 @@
+-- Role permission tests
+--
+-- Purpose: Rubric 6/7 - Proof of RBAC in the database
+--
+-- TODO:
+--   [ ] Connect as trader: allowed vs denied statements
+--   [ ] Connect as auditor: SELECT works, INSERT/UPDATE/DELETE denied
+--   [ ] Connect as admin: full access
+--   [ ] Record expected error messages

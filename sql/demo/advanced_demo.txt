@@ -1,0 +1,8 @@
+-- Demo script for procedures, functions, triggers, CTEs
+--
+-- Purpose: Demonstration
+--
+-- TODO:
+--   [ ] prompt PES1UG24CS637_HFT>\_
+--   [ ] USE HFT;
+--   [ ] Numbered demos: what it shows + SQL command

@@ -1,0 +1,9 @@
+-- Schema additions on top of HFT.sql
+--
+-- Purpose: Rubric 1/2 - supports auth, audit and recursive query
+--
+-- TODO:
+--   [ ] ALTER TABLE traders: add reports_to (self FK, nullable) and fill it in
+--   [ ] CREATE TABLE app_users (user_id, username UNIQUE, password_hash, role, trader_id NULL FK, created_at)
+--   [ ] CREATE TABLE audit_log (audit_id, table_name, action, row_key, old_values, new_values, changed_by, changed_at)
+--   [ ] Indexes for the new tables

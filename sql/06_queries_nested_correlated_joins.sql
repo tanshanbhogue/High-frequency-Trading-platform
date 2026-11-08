@@ -1,0 +1,10 @@
+-- Join, nested and correlated queries
+--
+-- Purpose: Rubric 3 - Nested/correlated/join SQL queries (4 marks)
+--
+-- TODO:
+--   [ ] INNER / LEFT / multi-table joins
+--   [ ] Subquery in WHERE (IN / EXISTS / ANY)
+--   [ ] Subquery in FROM (derived table)
+--   [ ] Correlated subquery (e.g. trades above that order's average price)
+--   [ ] Aggregation with GROUP BY / HAVING

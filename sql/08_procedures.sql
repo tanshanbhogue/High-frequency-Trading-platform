@@ -1,0 +1,10 @@
+-- Stored procedures
+--
+-- Purpose: Rubric 4 - Advanced concepts: procedure
+--
+-- TODO:
+--   [ ] sp_place_order(trader, portfolio, security, ...) with validation
+--   [ ] sp_route_order(order_id, exchange_id, qty)
+--   [ ] sp_add_trade(...) - inserts trade and updates order status in one transaction
+--   [ ] Error handling with SIGNAL
+--   [ ] Sample CALL statements

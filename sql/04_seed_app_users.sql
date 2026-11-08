@@ -1,0 +1,7 @@
+-- Seed application users (hashed passwords)
+--
+-- Purpose: Rubric 6 - Authentication
+--
+-- TODO:
+--   [ ] One user per role (admin, trader, auditor)
+--   [ ] Insert bcrypt hashes (generate in Node, never store plain text)

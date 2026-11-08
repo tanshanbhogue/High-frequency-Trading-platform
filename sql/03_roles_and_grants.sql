@@ -1,0 +1,11 @@
+-- MySQL roles, users and privileges
+--
+-- Purpose: Rubric 6 - Role-based access control in the database
+--
+-- TODO:
+--   [ ] CREATE ROLE hft_admin, hft_trader, hft_auditor
+--   [ ] GRANT: admin = all on HFT.*
+--   [ ] GRANT: trader = SELECT all, INSERT/UPDATE on orders, order_routes, trades; EXECUTE on procedures
+--   [ ] GRANT: auditor = SELECT only
+--   [ ] CREATE USER for each role and set default roles
+--   [ ] Never grant DROP/CREATE to trader or auditor

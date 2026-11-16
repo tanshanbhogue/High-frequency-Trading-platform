@@ -1,0 +1,84 @@
+// =====================================================================
+//  MONGODB DEMO  -  paste the commands into an interactive mongosh session
+//  Start it with:   mongosh
+//  Each demo: "// N. what it shows" followed by the command to run.
+//  To restore the original data at any time:  load('mongo/02_seed_data.js')
+//  (run mongosh from the repository root so that path works)
+// =====================================================================
+
+// SETUP: create + seed everything (run once, from the repository root)
+load('mongo/00_run_all.js')
+
+// SETUP: select the database
+use HFT_docs
+
+// 1. Shows the database exists and lists its collections
+show dbs
+show collections
+
+// 2. Number of documents in each collection (16 backtest runs, 77 order events)
+db.backtest_results.countDocuments({})
+db.order_events.countDocuments({})
+
+// 3. One complete backtest document: nested parameters/metrics and an equity-curve array
+db.backtest_results.findOne({ algorithm_id: 2 })
+
+// 4. The indexes on backtest_results
+db.backtest_results.getIndexes()
+
+// ---------------------------- READ -----------------------------------
+// 5. READ: filter + projection - runs of algorithm 2 (links to MySQL algorithms.algorithm_id = 2)
+db.backtest_results.find({ algorithm_id: 2 }, { _id: 0, run_label: 1, metrics: 1 })
+
+// 6. READ: comparison operator + sort - runs with Sharpe ratio above 1.5, best first
+db.backtest_results.find({ 'metrics.sharpe': { $gt: 1.5 } }, { _id: 0, run_label: 1, 'metrics.sharpe': 1 }).sort({ 'metrics.sharpe': -1 })
+
+// 7. READ: array + nested queries - runs tagged 'india' that trade INFY
+db.backtest_results.find({ tags: 'india', universe: 'INFY' }, { _id: 0, run_label: 1, universe: 1 })
+
+// 8. READ: aggregation - average Sharpe and best return per strategy type
+db.backtest_results.aggregate([{ $group: { _id: '$strategy_type', runs: { $sum: 1 }, avg_sharpe: { $avg: '$metrics.sharpe' }, best_return_pct: { $max: '$metrics.total_return_pct' } } }, { $sort: { avg_sharpe: -1 } }])
+
+// 9. READ: the full event timeline of MySQL order 4 (routed to two exchanges, three fills)
+db.order_events.find({ order_id: 4 }, { _id: 0, event_type: 1, ts: 1, payload: 1 }).sort({ ts: 1 })
+
+// 10. READ: query inside a nested payload - fills of 500 shares or more
+db.order_events.find({ event_type: 'FILL', 'payload.executed_quantity': { $gte: 500 } }, { _id: 0, order_id: 1, payload: 1 })
+
+// ---------------------------- UPDATE ---------------------------------
+// 11. UPDATE: updateOne with $set - review a run and add a note
+db.backtest_results.updateOne({ run_label: 'Q1-2024 wide spread' }, { $set: { status: 'REVIEWED', notes: 'Reviewed: wide spreads lose edge.' } })
+db.backtest_results.findOne({ run_label: 'Q1-2024 wide spread' }, { _id: 0, run_label: 1, status: 1, notes: 1 })
+
+// 12. UPDATE: $inc - add 10 to the trade count
+db.backtest_results.updateOne({ run_label: 'Q1-2024 wide spread' }, { $inc: { 'metrics.num_trades': 10 } })
+
+// 13. UPDATE: updateMany with $addToSet - tag every run with Sharpe >= 1.5 as 'top-performer'
+db.backtest_results.updateMany({ 'metrics.sharpe': { $gte: 1.5 } }, { $addToSet: { tags: 'top-performer' } })
+db.backtest_results.find({ tags: 'top-performer' }, { _id: 0, run_label: 1, tags: 1 })
+
+// 14. UPDATE: $push to an array - append a day to an equity curve; $pull removes a tag
+db.backtest_results.updateOne({ run_label: 'Q1-2024 wide spread' }, { $push: { equity_curve: { day: 11, equity: 104250 } } })
+db.backtest_results.updateMany({ tags: 'weak' }, { $pull: { tags: 'weak' } })
+
+// 15. UPDATE: upsert - create the note for order 9 if it does not exist yet
+db.order_events.updateOne({ order_id: 9, event_type: 'NOTE' }, { $set: { ts: new Date(), source: 'web', payload: { text: 'Stop order waiting for trigger price' } } }, { upsert: true })
+
+// ---------------------------- DELETE ---------------------------------
+// 16. DELETE: deleteOne - remove one run by label
+db.backtest_results.deleteOne({ run_label: 'TWAP trial' })
+
+// 17. DELETE: deleteMany with a filter - remove all FAILED runs
+db.backtest_results.deleteMany({ status: 'FAILED' })
+
+// 18. DELETE: deleteMany with a comparison - runs with a negative Sharpe ratio
+db.backtest_results.deleteMany({ 'metrics.sharpe': { $lt: 0 } })
+
+// 19. DELETE: TTL index - documents with "expire_at" delete themselves (checked about once a minute)
+db.order_events.createIndex({ expire_at: 1 }, { expireAfterSeconds: 0, name: 'ttl_expire_at' })
+db.order_events.insertOne({ order_id: 1, event_type: 'NOTE', ts: new Date(), source: 'system', payload: { text: 'temporary' }, expire_at: new Date(Date.now() + 60000) })
+
+// 20. Confirm the counts after the changes, then restore the original data
+db.backtest_results.countDocuments({})
+load('mongo/02_seed_data.js')
+db.backtest_results.countDocuments({})

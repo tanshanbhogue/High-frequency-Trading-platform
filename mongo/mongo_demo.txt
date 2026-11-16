@@ -1,4 +1,0 @@
-// Demo script for MongoDB (numbered: what it shows + command)
-//
-// Purpose: Demonstration
-//

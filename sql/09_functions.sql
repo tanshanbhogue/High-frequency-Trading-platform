@@ -1,9 +1,0 @@
--- Stored functions
---
--- Purpose: Rubric 4 - Advanced concepts: function
---
--- TODO:
---   [ ] fn_remaining_quantity(order_id)
---   [ ] fn_portfolio_value(portfolio_id)
---   [ ] fn_order_vwap(order_id)
---   [ ] Sample SELECT using each function

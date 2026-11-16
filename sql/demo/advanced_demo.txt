@@ -1,0 +1,197 @@
+-- =====================================================================
+--  ADVANCED SQL DEMO: roles, functions, procedures, triggers, CTEs, DML
+--  Each demo: "-- N. what it shows" followed by the SQL to run in MySQL.
+--  Run from the REPOSITORY ROOT so that the SOURCE paths work:
+--      mysql -u root -p --force < sql/demo/advanced_demo.txt
+--  (--force keeps going past the errors that are shown ON PURPOSE.)
+--  Every change below happens inside a transaction that is rolled back.
+-- =====================================================================
+
+-- SETUP: make the prompt look like PES1UG24CS637_HFT>  (\_ = a space)
+prompt PES1UG24CS637_HFT>\_
+
+-- SETUP: select the database
+USE HFT;
+
+
+-- =====================================================================
+-- SECTION A : ROLES AND PRIVILEGES (role-based access control in MySQL)
+-- =====================================================================
+
+-- 1. The roles and the login accounts they are granted to
+SELECT FROM_USER AS role_name, TO_USER AS granted_to, TO_HOST AS host
+FROM mysql.role_edges WHERE FROM_USER LIKE 'hft_%' AND TO_HOST = 'localhost' ORDER BY FROM_USER;
+
+-- 2. What the TRADER role may do: read tables + EXECUTE the four procedures + read-only functions
+SHOW GRANTS FOR 'hft_trader_user'@'localhost' USING 'hft_trader';
+
+-- 3. What the AUDITOR role may do: SELECT only (plus the read-only functions)
+SHOW GRANTS FOR 'hft_auditor_user'@'localhost' USING 'hft_auditor';
+
+-- 4. Run all 26 permission checks (trader / auditor / auth / admin accounts) automatically
+--    (needs Node.js and "npm install" inside the app folder)
+\! cd app && node scripts/role-tests.js
+
+
+-- =====================================================================
+-- SECTION B : STORED FUNCTIONS
+-- =====================================================================
+
+-- 5. Executed, remaining and volume-weighted average price of every order
+SELECT order_id, status, quantity,
+       fn_executed_quantity(order_id)  AS executed,
+       fn_remaining_quantity(order_id) AS remaining,
+       fn_order_vwap(order_id)         AS vwap
+FROM orders ORDER BY order_id;
+
+-- 6. Market value of every portfolio (latest quote x quantity)
+SELECT portfolio_id, portfolio_name, base_currency, fn_portfolio_value(portfolio_id) AS market_value
+FROM portfolios ORDER BY portfolio_id;
+
+-- 7. A function inside a WHERE clause: orders with more than half of their quantity still open
+SELECT order_id, quantity, fn_remaining_quantity(order_id) AS remaining
+FROM orders WHERE fn_remaining_quantity(order_id) > quantity / 2 ORDER BY order_id;
+
+
+-- =====================================================================
+-- SECTION C : STORED PROCEDURES
+-- =====================================================================
+
+-- 8. Whole trading life cycle with procedures (placed, routed, partially then fully filled)
+--    - then rolled back so nothing is kept
+START TRANSACTION;
+CALL sp_place_order(3, 3, 4, NULL, 'BUY', 'LIMIT', 100, 1440.00, 'DAY', @oid);
+SELECT @oid AS new_order_id;
+CALL sp_route_order(@oid, 1, 100, 'demo route to NSE');
+CALL sp_add_trade(@oid, 1, 60, 1439.50, 8.64, @tid);
+SELECT order_id, status, fn_executed_quantity(order_id) AS executed, fn_remaining_quantity(order_id) AS remaining FROM orders WHERE order_id = @oid;
+CALL sp_add_trade(@oid, 1, 40, 1439.00, 5.76, @tid);
+SELECT order_id, status, fn_executed_quantity(order_id) AS executed, fn_remaining_quantity(order_id) AS remaining FROM orders WHERE order_id = @oid;
+ROLLBACK;
+
+-- 9. Validation inside sp_place_order: trader 2 does not own portfolio 3  (EXPECTED ERROR)
+CALL sp_place_order(2, 3, 4, NULL, 'BUY', 'LIMIT', 100, 1440.00, 'DAY', @oid);
+
+-- 10. Validation inside sp_place_order: a RETIRED algorithm cannot be used  (EXPECTED ERROR)
+CALL sp_place_order(3, 3, 4, 1, 'BUY', 'LIMIT', 100, 1440.00, 'DAY', @oid);
+
+-- 11. Validation inside sp_add_trade: a trade above a BUY order's limit price  (EXPECTED ERROR)
+START TRANSACTION;
+CALL sp_place_order(3, 3, 4, NULL, 'BUY', 'LIMIT', 100, 1440.00, 'DAY', @oid);
+CALL sp_route_order(@oid, 1, 100, 'demo');
+CALL sp_add_trade(@oid, 1, 10, 1500.00, 1, @tid);
+ROLLBACK;
+
+
+-- =====================================================================
+-- SECTION D : TRIGGERS
+-- =====================================================================
+
+-- 12. All triggers in the database
+SELECT trigger_name, event_object_table AS on_table, action_timing AS timing, event_manipulation AS event
+FROM information_schema.triggers WHERE trigger_schema = 'HFT'
+ORDER BY event_object_table, action_timing DESC, event_manipulation, trigger_name;
+
+-- 13. STATUS-SYNC trigger + AUDIT triggers: every trade moves the order status and is logged
+--     (@app_user is what the web app sets so the log shows WHO did it)
+START TRANSACTION;
+SET @app_user = 'demo-user';
+CALL sp_place_order(3, 3, 4, NULL, 'BUY', 'LIMIT', 100, 1440.00, 'DAY', @oid);
+CALL sp_route_order(@oid, 1, 100, 'demo');
+SELECT status FROM orders WHERE order_id = @oid;                                 -- PENDING
+CALL sp_add_trade(@oid, 1, 100, 1439.00, 10, @tid);
+SELECT status FROM orders WHERE order_id = @oid;                                 -- FILLED
+SELECT route_status FROM order_routes WHERE order_id = @oid;                     -- FILLED
+SELECT table_name, action, row_key, changed_by, new_values FROM audit_log ORDER BY audit_id DESC LIMIT 6;
+ROLLBACK;
+SET @app_user = NULL;
+
+-- 14. Ownership trigger: owners of one portfolio can never add up to more than 100%  (EXPECTED ERROR)
+INSERT INTO portfolio_owners VALUES (2, 3, 10.00, '2024-01-01');
+
+-- 15. Routing trigger: Infosys is not listed on NASDAQ  (EXPECTED ERROR)
+START TRANSACTION;
+CALL sp_place_order(3, 3, 1, NULL, 'BUY', 'LIMIT', 100, 1650.00, 'DAY', @oid);
+CALL sp_route_order(@oid, 3, 100, 'wrong exchange');
+ROLLBACK;
+
+-- 16. Trade-quantity trigger: order 1 is fully executed, one more share is rejected  (EXPECTED ERROR)
+INSERT INTO trades (order_id, exchange_id, execution_reference, executed_quantity, execution_price, executed_at)
+VALUES (1, 1, 'DEMO-OVER', 1, 1651, NOW());
+
+-- 17. app_users trigger: a TRADER login must be linked to a trader  (EXPECTED ERROR)
+INSERT INTO app_users (username, password_hash, role) VALUES ('broken', 'x', 'TRADER');
+
+
+-- =====================================================================
+-- SECTION E : CTEs, RECURSIVE CTE, WINDOW FUNCTIONS (sql/07_cte_and_recursive.sql)
+-- =====================================================================
+
+-- 18. CTE: each exchange's share of the total traded volume
+WITH exchange_volume AS (
+    SELECT exchange_id, SUM(executed_quantity) AS volume FROM trades GROUP BY exchange_id
+)
+SELECT e.mic_code, ev.volume,
+       ROUND(100 * ev.volume / (SELECT SUM(volume) FROM exchange_volume), 2) AS pct_of_total
+FROM exchange_volume ev JOIN exchanges e ON e.exchange_id = ev.exchange_id
+ORDER BY ev.volume DESC;
+
+-- 19. RECURSIVE CTE: the trading-desk hierarchy (who reports to whom)
+WITH RECURSIVE hierarchy AS (
+    SELECT trader_id, full_name, role, 0 AS level, CAST(full_name AS CHAR(300)) AS path
+    FROM traders WHERE reports_to IS NULL
+  UNION ALL
+    SELECT t.trader_id, t.full_name, t.role, h.level + 1, CONCAT(h.path, ' > ', t.full_name)
+    FROM traders t JOIN hierarchy h ON t.reports_to = h.trader_id
+)
+SELECT CONCAT(REPEAT('    ', level), full_name) AS org_chart, role, level FROM hierarchy ORDER BY path;
+
+-- 20. RECURSIVE CTE: number of people below every manager
+WITH RECURSIVE subtree AS (
+    SELECT trader_id AS manager_id, trader_id AS member_id FROM traders
+  UNION ALL
+    SELECT s.manager_id, t.trader_id FROM traders t JOIN subtree s ON t.reports_to = s.member_id
+)
+SELECT m.full_name AS manager, COUNT(*) - 1 AS people_below
+FROM subtree s JOIN traders m ON m.trader_id = s.manager_id
+GROUP BY m.trader_id, m.full_name HAVING COUNT(*) - 1 > 0 ORDER BY people_below DESC;
+
+-- 21. Window function: traders ranked by traded value
+WITH notional AS (
+    SELECT o.trader_id, SUM(t.executed_quantity * t.execution_price) AS notional
+    FROM orders o JOIN trades t ON t.order_id = o.order_id GROUP BY o.trader_id
+)
+SELECT tr.full_name, n.notional, RANK() OVER (ORDER BY n.notional DESC) AS notional_rank
+FROM notional n JOIN traders tr ON tr.trader_id = n.trader_id ORDER BY notional_rank;
+
+
+-- =====================================================================
+-- SECTION F : NESTED / CORRELATED QUERIES (sql/06_queries_nested_correlated_joins.sql)
+-- =====================================================================
+
+-- 22. CORRELATED subquery: trades executed above the average price of their own order
+SELECT t.trade_id, t.order_id, t.execution_price,
+       (SELECT AVG(t2.execution_price) FROM trades t2 WHERE t2.order_id = t.order_id) AS order_avg_price
+FROM trades t
+WHERE t.execution_price > (SELECT AVG(t2.execution_price) FROM trades t2 WHERE t2.order_id = t.order_id)
+ORDER BY t.order_id, t.trade_id;
+
+-- 23. CORRELATED subquery: the latest quote for each listing
+SELECT sl.ticker_symbol, e.mic_code, m.feed_timestamp, m.last_price
+FROM market_feed_data m
+JOIN security_listings sl ON sl.listing_id = m.listing_id
+JOIN exchanges e ON e.exchange_id = sl.exchange_id
+WHERE m.feed_timestamp = (SELECT MAX(m2.feed_timestamp) FROM market_feed_data m2 WHERE m2.listing_id = m.listing_id)
+ORDER BY sl.ticker_symbol, e.mic_code;
+
+-- 24. NESTED query with NOT EXISTS: securities that have never been ordered
+SELECT s.security_id, s.security_name FROM securities s
+WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.security_id = s.security_id);
+
+
+-- =====================================================================
+-- SECTION G : DML (INSERT / UPDATE / DELETE / TRANSACTIONS)
+-- =====================================================================
+
+-- 25. Full DML demo: inserts, updates, deletes, SAVEPOINT, ROLLBACK (leaves the data unchanged)
+SOURCE sql/05_dml_operations.sql;

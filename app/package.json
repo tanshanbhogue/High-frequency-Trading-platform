@@ -1,0 +1,22 @@
+{
+  "name": "hft-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "hash": "node scripts/hash-password.js",
+    "test:roles": "node scripts/role-tests.js",
+    "test:api": "node scripts/api-smoke-test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "jose": "5.9.6",
+    "mongodb": "6.10.0",
+    "mysql2": "3.11.5",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

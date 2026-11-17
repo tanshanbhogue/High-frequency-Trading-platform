@@ -242,62 +242,60 @@ SELECT * FROM v_portfolio_ownership_check;
 SELECT * FROM v_order_execution_summary WHERE status_check <> 'OK';
 
 
--- =====================================================================
--- SECTION C : INTEGRITY RULES (each statement below is REJECTED on purpose)
--- =====================================================================
 
--- 31. A trader who does not own the portfolio cannot place an order on it
+--  INTEGRITY RULES (each statement below is REJECTED on purpose)
+
+
+--  A trader who does not own the portfolio cannot place an order on it
 --     (composite foreign key fk_orders_owner)
 INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price, time_in_force, status)
 VALUES (2, 3, 1, 'BUY', 'LIMIT', 10, 100, 'DAY', 'NEW');
 
--- 32. Portfolio ownership cannot exceed 100% (trigger)
+--  Portfolio ownership cannot exceed 100% (trigger)
 INSERT INTO portfolio_owners VALUES (2, 3, 10.00, '2024-01-01');
 
--- 33. A single owner cannot hold more than 100% of a portfolio (rejected by the ownership rules)
+--  A single owner cannot hold more than 100% of a portfolio (rejected by the ownership rules)
 INSERT INTO portfolio_owners VALUES (11, 11, 150.00, '2024-01-01');
 
--- 34. Executed quantity cannot exceed the order quantity (trigger; order 1 is fully filled)
+-- Executed quantity cannot exceed the order quantity (trigger; order 1 is fully filled)
 INSERT INTO trades (order_id, exchange_id, execution_reference, executed_quantity, execution_price, executed_at)
 VALUES (1, 1, 'X-1', 1, 1651, NOW());
 
--- 35. A trade must occur on an exchange the order was routed to
+-- A trade must occur on an exchange the order was routed to
 --     (composite foreign key fk_trades_route; order 2 was routed only to NSE)
 INSERT INTO trades (order_id, exchange_id, execution_reference, executed_quantity, execution_price, executed_at)
 VALUES (2, 2, 'X-2', 1, 4000, NOW());
 
--- 36. An order cannot be routed to an exchange where its security is not listed
+--  An order cannot be routed to an exchange where its security is not listed
 --     (trigger; order 14 is for QQQ, which is not listed on the LSE)
 INSERT INTO order_routes VALUES (14, 5, 10, NOW(3), 'PENDING', 'test');
 
--- 37. Crossed market quote (bid higher than ask) is rejected (CHECK constraint)
+--  Crossed market quote (bid higher than ask) is rejected (CHECK constraint)
 INSERT INTO market_feed_data (listing_id, feed_timestamp, bid_price, ask_price, last_price, bid_size, ask_size, traded_volume, source)
 VALUES (1, NOW(3), 101, 100, 100, 1, 1, 1, 'TEST');
 
--- 38. Negative prices and quantities are rejected (CHECK constraints)
+--  Negative prices and quantities are rejected (CHECK constraints)
 INSERT INTO portfolio_holdings VALUES (1, 5, -5, 10, NOW());
 
--- 39. A MARKET order must not carry a price (CHECK constraint)
+-- A MARKET order must not carry a price (CHECK constraint)
 INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price)
 VALUES (1, 1, 1, 'BUY', 'MARKET', 10, 5);
 
--- 40. Duplicate email is rejected (UNIQUE constraint)
+--  Duplicate email is rejected (UNIQUE constraint)
 INSERT INTO traders (full_name, email, desk, role)
 VALUES ('Test User', 'aarav.sharma@quantedge.example', 'Test Desk', 'Trader');
 
--- 41. Deleting a trader who owns portfolios / has orders is blocked (ON DELETE RESTRICT)
+--  Deleting a trader who owns portfolios / has orders is blocked (ON DELETE RESTRICT)
 DELETE FROM traders WHERE trader_id = 1;
 
--- 42. Same algorithm name + version cannot be inserted twice (UNIQUE constraint)
+--  Same algorithm name + version cannot be inserted twice (UNIQUE constraint)
 INSERT INTO algorithms (algorithm_name, version, strategy_type, programming_language)
 VALUES ('AlphaMaker', '2.1', 'Market Making', 'C++');
 
 
--- =====================================================================
--- SECTION D : A VALID CHANGE, THEN UNDO IT (shows the rules allow correct data)
--- =====================================================================
 
--- 43. Start a transaction, insert a valid manual order (trader 3 owns portfolio 3),
+
+--  Start a transaction, insert a valid manual order (trader 3 owns portfolio 3),
 --     show it, then roll back so the database is left unchanged
 START TRANSACTION;
 INSERT INTO orders (trader_id, portfolio_id, security_id, side, order_type, quantity, limit_price, time_in_force, status)

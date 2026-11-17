@@ -1,19 +1,10 @@
--- =====================================================================
---  HFT (High Frequency Trading) System - DBMS course project
---  Target : MySQL 8.0.16+ (CHECK constraints are enforced)
---  Run    : mysql -u root -p < HFT.sql
---  NOTE   : This script does NOT drop anything. If the tables already exist,
---           use the optional reset in Part 3 of the instructions first.
---  All timestamps (feed, orders, trades) are stored in UTC.
--- =====================================================================
+
 
 SET NAMES utf8mb4;
 CREATE DATABASE IF NOT EXISTS HFT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 USE HFT;
 
--- =====================================================================
--- SECTION 1 : MAIN ENTITY TABLES
--- =====================================================================
+
 
 CREATE TABLE traders (
     trader_id   INT          NOT NULL AUTO_INCREMENT,

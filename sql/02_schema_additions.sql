@@ -1,22 +1,8 @@
--- =====================================================================
--- 02_schema_additions.sql
--- Schema additions on top of 01_HFT.sql
---   1. traders.reports_to   -> desk hierarchy (used by the recursive CTE)
---   2. app_users            -> web-app logins (authentication)
---   3. audit_log            -> filled by triggers (see 10_triggers.sql)
--- Run ONCE, after 01_HFT.sql:   mysql -u root -p < sql/02_schema_additions.sql
--- (ALTER TABLE ... ADD COLUMN fails if run a second time.)
--- =====================================================================
+
 
 USE HFT;
 
--- ---------------------------------------------------------------------
--- 1. Desk hierarchy: every trader may report to exactly one other trader.
---    NULL = top of the hierarchy. Deleting a manager keeps their reports.
---    (Rule "a trader cannot report to themselves" is NOT a CHECK, because
---     MySQL forbids CHECK on columns that have FK referential actions.
---     The data below respects it; the app/procedures must as well.)
--- ---------------------------------------------------------------------
+
 ALTER TABLE traders
     ADD COLUMN reports_to INT NULL AFTER role,
     ADD KEY idx_traders_reports_to (reports_to),
@@ -31,11 +17,6 @@ UPDATE traders SET reports_to = 2  WHERE trader_id IN (4, 10);
 UPDATE traders SET reports_to = 5  WHERE trader_id = 12;
 UPDATE traders SET reports_to = 8  WHERE trader_id IN (6, 7, 11);
 
--- ---------------------------------------------------------------------
--- 2. Application users (web login). Passwords are stored ONLY as bcrypt
---    hashes (never plain text). Rows are inserted by 04_seed_app_users.sql.
---    A TRADER login is linked to a real trader row; ADMIN/AUDITOR need not be.
--- ---------------------------------------------------------------------
 CREATE TABLE app_users (
     user_id       INT          NOT NULL AUTO_INCREMENT,
     username      VARCHAR(50)  NOT NULL,
@@ -72,10 +53,7 @@ BEGIN
 END$$
 DELIMITER ;
 
--- ---------------------------------------------------------------------
--- 3. Audit trail. old_values / new_values hold the row as JSON.
---    Only triggers write here; no application role gets INSERT on it.
--- ---------------------------------------------------------------------
+
 CREATE TABLE audit_log (
     audit_id    BIGINT       NOT NULL AUTO_INCREMENT,
     table_name  VARCHAR(40)  NOT NULL,
@@ -91,9 +69,7 @@ CREATE TABLE audit_log (
     CONSTRAINT chk_audit_action CHECK (action IN ('INSERT', 'UPDATE', 'DELETE'))
 ) ENGINE=InnoDB;
 
--- ---------------------------------------------------------------------
--- Quick check
--- ---------------------------------------------------------------------
+
 SELECT trader_id, full_name, role, reports_to FROM traders ORDER BY trader_id;
 SHOW TABLES LIKE 'app_users';
 SHOW TABLES LIKE 'audit_log';

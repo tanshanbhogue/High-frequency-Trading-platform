@@ -1,57 +1,43 @@
--- =====================================================================
---  HFT DATABASE - DEMONSTRATION SCRIPT
---  Each demo: "-- N. <what it shows>" followed by the SQL to run in MySQL.
---  Paste into the mysql client one block at a time, or run it all with:
---      mysql -u root -p --force < sql/demo/HFT_demo.txt
---  (--force keeps going past the deliberate errors in Section C.)
--- =====================================================================
 
--- SETUP: make the prompt look like PES1UG24CS637_HFT>  (\_ = a space)
 prompt PES1UG24CS637_HFT>\_
 
--- SETUP: select the database
+
 USE HFT;
 
 
--- =====================================================================
--- SECTION A : DATABASE STRUCTURE AND ROW COUNTS
--- =====================================================================
-
--- 1. Confirms the HFT database exists
 SHOW DATABASES;
 
--- 2. Lists all 16 tables (8 entities + 6 junctions + app_users + audit_log) and the 2 helper views
+
 SHOW FULL TABLES;
 
--- 3. Shows the structure of the orders table (columns, types, keys)
 DESCRIBE orders;
 
--- 4. Shows the foreign keys of orders, including the composite
+--  Shows the foreign keys of orders, including the composite
 --    (trader_id, portfolio_id) -> portfolio_owners ownership rule
 SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM information_schema.KEY_COLUMN_USAGE
 WHERE TABLE_SCHEMA = 'HFT' AND TABLE_NAME = 'orders' AND REFERENCED_TABLE_NAME IS NOT NULL
 ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION;
 
--- 5. Shows the foreign keys of trades, including the composite
+--  Shows the foreign keys of trades, including the composite
 --    (order_id, exchange_id) -> order_routes (EXECUTED_ON) rule
 SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM information_schema.KEY_COLUMN_USAGE
 WHERE TABLE_SCHEMA = 'HFT' AND TABLE_NAME = 'trades' AND REFERENCED_TABLE_NAME IS NOT NULL
 ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION;
 
--- 6. Shows the CHECK constraints defined in the database
+--  Shows the CHECK constraints defined in the database
 SELECT TABLE_NAME, CONSTRAINT_NAME
 FROM information_schema.TABLE_CONSTRAINTS
 WHERE CONSTRAINT_SCHEMA = 'HFT' AND CONSTRAINT_TYPE = 'CHECK'
 ORDER BY TABLE_NAME, CONSTRAINT_NAME;
 
--- 7. Lists every trigger (ownership <= 100%, routing, trade quantity, audit, status sync, app_users)
+--  Lists every trigger (ownership <= 100%, routing, trade quantity, audit, status sync, app_users)
 SELECT trigger_name, event_object_table AS on_table, action_timing AS timing, event_manipulation AS event
 FROM information_schema.triggers WHERE trigger_schema = 'HFT'
 ORDER BY event_object_table, action_timing DESC, event_manipulation, trigger_name;
 
--- 8. Row count of every table (>= 12 rows in each of the 8 main tables)
+--  Row count of every table (>= 12 rows in each of the 8 main tables)
 SELECT 'traders' AS table_name, COUNT(*) AS row_count FROM traders
 UNION ALL SELECT 'algorithms', COUNT(*) FROM algorithms
 UNION ALL SELECT 'portfolios', COUNT(*) FROM portfolios
@@ -70,19 +56,16 @@ UNION ALL SELECT 'app_users', COUNT(*) FROM app_users
 UNION ALL SELECT 'audit_log', COUNT(*) FROM audit_log;
 
 
--- =====================================================================
--- SECTION B : QUERY DEMONSTRATIONS
--- =====================================================================
 
--- 9. Every trader and the portfolios they own (many-to-many via portfolio_owners;
---    LEFT JOIN keeps traders who own nothing)
+
+--  Every trader and the portfolios they own 
 SELECT t.trader_id, t.full_name, p.portfolio_name, po.ownership_percentage
 FROM traders t
 LEFT JOIN portfolio_owners po ON po.trader_id = t.trader_id
 LEFT JOIN portfolios p        ON p.portfolio_id = po.portfolio_id
 ORDER BY t.trader_id, p.portfolio_name;
 
--- 10. Portfolios with joint ownership (several owners, percentages shown per owner)
+--  Portfolios with joint ownership (several owners, percentages shown per owner)
 SELECT p.portfolio_name,
        GROUP_CONCAT(CONCAT(t.full_name, ' ', po.ownership_percentage, '%')
                     ORDER BY po.ownership_percentage DESC SEPARATOR ' | ') AS owners
@@ -93,7 +76,7 @@ GROUP BY p.portfolio_id, p.portfolio_name
 HAVING COUNT(*) > 1
 ORDER BY p.portfolio_name;
 
--- 11. Securities held by each portfolio, with quantity, average price and cost basis
+--  Securities held by each portfolio, with quantity, average price and cost basis
 SELECT p.portfolio_name, s.security_name, ph.quantity_held, ph.avg_price,
        ph.quantity_held * ph.avg_price AS cost_basis
 FROM portfolio_holdings ph
@@ -101,8 +84,7 @@ JOIN portfolios p ON p.portfolio_id = ph.portfolio_id
 JOIN securities s ON s.security_id  = ph.security_id
 ORDER BY p.portfolio_name, s.security_name;
 
--- 12. Algorithms and their developers (several developers per algorithm,
---     several algorithms per developer)
+--  Algorithms and their developers 
 SELECT a.algorithm_id, a.algorithm_name, a.version, a.strategy_type, a.programming_language,
        GROUP_CONCAT(CONCAT(t.full_name, ' (', ad.contribution_role, ')')
                     ORDER BY t.full_name SEPARATOR '; ') AS developers
@@ -112,7 +94,7 @@ LEFT JOIN traders t               ON t.trader_id     = ad.trader_id
 GROUP BY a.algorithm_id, a.algorithm_name, a.version, a.strategy_type, a.programming_language
 ORDER BY a.algorithm_id;
 
--- 13. All securities listed on one exchange (NSE), with ticker symbol
+--  All securities listed on one exchange (NSE), with ticker symbol
 SELECT e.exchange_name, sl.ticker_symbol, s.security_name, s.asset_type, sl.currency, sl.listing_date
 FROM security_listings sl
 JOIN exchanges  e ON e.exchange_id = sl.exchange_id
@@ -120,7 +102,7 @@ JOIN securities s ON s.security_id = sl.security_id
 WHERE e.mic_code = 'XNSE'
 ORDER BY sl.ticker_symbol;
 
--- 14. Securities listed on more than one exchange (many-to-many Security-Exchange)
+--  Securities listed on more than one exchange (many-to-many Security-Exchange)
 SELECT s.security_name,
        GROUP_CONCAT(CONCAT(e.mic_code, ':', sl.ticker_symbol) ORDER BY e.mic_code SEPARATOR ', ') AS listings
 FROM securities s
@@ -130,7 +112,7 @@ GROUP BY s.security_id, s.security_name
 HAVING COUNT(*) > 1
 ORDER BY s.security_name;
 
--- 15. Market feed for one selected security (Microsoft) on every exchange,
+--  Market feed for one selected security (Microsoft) on every exchange,
 --     with bid-ask spread
 SELECT s.security_name, e.mic_code, sl.ticker_symbol, m.feed_timestamp,
        m.bid_price, m.ask_price, (m.ask_price - m.bid_price) AS spread,
@@ -142,7 +124,7 @@ JOIN exchanges e          ON e.exchange_id = sl.exchange_id
 WHERE s.isin = 'US5949181045'
 ORDER BY m.feed_timestamp;
 
--- 16. Which algorithms trained on which market feed records
+--  Which algorithms trained on which market feed records
 SELECT a.algorithm_name, a.version, atd.data_split, m.feed_id,
        sl.ticker_symbol, e.mic_code, m.feed_timestamp
 FROM algorithm_training_data atd
@@ -152,7 +134,7 @@ JOIN security_listings sl ON sl.listing_id  = m.listing_id
 JOIN exchanges e          ON e.exchange_id  = sl.exchange_id
 ORDER BY a.algorithm_id, m.feed_id;
 
--- 17. Training/validation/testing split per algorithm
+--  Training/validation/testing split per algorithm
 SELECT a.algorithm_name, a.version,
        SUM(atd.data_split = 'TRAINING')   AS training_rows,
        SUM(atd.data_split = 'VALIDATION') AS validation_rows,
@@ -162,7 +144,7 @@ JOIN algorithm_training_data atd ON atd.algorithm_id = a.algorithm_id
 GROUP BY a.algorithm_id, a.algorithm_name, a.version
 ORDER BY a.algorithm_id;
 
--- 18. All orders with trader, portfolio, security and algorithm
+--  All orders with trader, portfolio, security and algorithm
 --     (orders with no algorithm are shown as MANUAL)
 SELECT o.order_id, t.full_name AS trader, p.portfolio_name, s.security_name,
        COALESCE(CONCAT(a.algorithm_name, ' v', a.version), 'MANUAL') AS algorithm,
@@ -174,11 +156,11 @@ JOIN securities s ON s.security_id  = o.security_id
 LEFT JOIN algorithms a ON a.algorithm_id = o.algorithm_id
 ORDER BY o.order_id;
 
--- 19. Orders by status (NEW, PENDING, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED)
+--  Orders by status (NEW, PENDING, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED)
 SELECT status, COUNT(*) AS num_orders
 FROM orders GROUP BY status ORDER BY num_orders DESC;
 
--- 20. Every order and its execution details (orders with no trades still appear)
+--  Every order and its execution details (orders with no trades still appear)
 SELECT o.order_id, o.status, tr.trade_id, tr.execution_reference, e.mic_code,
        tr.executed_quantity, tr.execution_price, tr.commission,
        tr.executed_at, tr.settlement_status
@@ -187,7 +169,7 @@ LEFT JOIN trades tr   ON tr.order_id   = o.order_id
 LEFT JOIN exchanges e ON e.exchange_id = tr.exchange_id
 ORDER BY o.order_id, tr.executed_at;
 
--- 21. Total executed quantity AND remaining unexecuted quantity of each order
+--  Total executed quantity AND remaining unexecuted quantity of each order
 SELECT o.order_id, o.status, o.quantity,
        COALESCE(SUM(t.executed_quantity), 0)              AS total_executed,
        o.quantity - COALESCE(SUM(t.executed_quantity), 0) AS remaining_quantity
@@ -196,7 +178,7 @@ LEFT JOIN trades t ON t.order_id = o.order_id
 GROUP BY o.order_id, o.status, o.quantity
 ORDER BY o.order_id;
 
--- 22. Partial fills: orders that have multiple trades
+--  Partial fills: orders that have multiple trades
 SELECT o.order_id, COUNT(t.trade_id) AS num_trades,
        SUM(t.executed_quantity) AS executed, o.quantity AS ordered
 FROM orders o
@@ -205,7 +187,7 @@ GROUP BY o.order_id, o.quantity
 HAVING COUNT(t.trade_id) > 1
 ORDER BY o.order_id;
 
--- 23. Orders routed to multiple exchanges (many-to-many Order-Exchange)
+-- Orders routed to multiple exchanges (many-to-many Order-Exchange)
 SELECT o.order_id, e.mic_code, r.routed_quantity, r.route_status, r.routing_reason
 FROM order_routes r
 JOIN orders o    ON o.order_id    = r.order_id
@@ -213,7 +195,7 @@ JOIN exchanges e ON e.exchange_id = r.exchange_id
 WHERE r.order_id IN (SELECT order_id FROM order_routes GROUP BY order_id HAVING COUNT(*) > 1)
 ORDER BY o.order_id, e.mic_code;
 
--- 24. Orders that never produced a trade (new, pending, cancelled, rejected)
+--  Orders that never produced a trade (new, pending, cancelled, rejected)
 SELECT o.order_id, o.status, o.quantity
 FROM orders o
 LEFT JOIN trades t ON t.order_id = o.order_id
@@ -324,9 +306,7 @@ SELECT order_id, trader_id, portfolio_id, security_id, side, quantity, status
 FROM orders ORDER BY order_id DESC LIMIT 1;
 ROLLBACK;
 
--- 44. Confirm the rollback: still 17 orders
+-- Confirm the rollback: still 17 orders
 SELECT COUNT(*) AS order_count FROM orders;
 
--- =====================================================================
--- END OF DEMO
--- =====================================================================
+

@@ -1,6 +1,3 @@
-# ER diagram
-
-GitHub renders the diagram below automatically (Mermaid). **For the submission**, paste the code block into <https://mermaid.live>, export a PNG/SVG, save it as `docs/er_diagram.png` and embed it here.
 
 ```mermaid
 erDiagram
